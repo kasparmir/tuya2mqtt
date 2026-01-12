@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tuya2MQTT Bridge v2.0</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --success: #4caf50;
+            --danger: #f44336;
+            --warning: #ff9800;
+            --info: #2196f3;
+            --dark: #333;
+            --light: #f8f9fa;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container { max-width: 1600px; margin: 0 auto; }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-left h1 { color: var(--primary); font-size: 2.5em; margin-bottom: 5px; }
+        .header-left .subtitle { color: #666; font-size: 1.1em; }
+        .header-left .version { color: #999; font-size: 0.9em; margin-top: 5px; }
+        
+        .header-right { display: flex; gap: 10px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #5568d3; transform: translateY(-2px); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #45a049; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-value { font-size: 2em; font-weight: bold; color: var(--primary); }
+        .stat-label { color: #666; margin-top: 5px; font-size: 0.9em; }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 12px 24px;
+            background: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 20px;
+        }
+        
+        .device-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.15);
+            transition: all 0.3s;
+        }
+        .device-card:hover { transform: translateY(-5px); box-shadow: 0 10px 35px rgba(0,0,0,0.2); }
+        
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .device-name { font-size: 1.5em; font-weight: bold; color: var(--dark); }
+        .device-status {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .status-online { background: var(--success); color: white; }
+        .status-offline { background: var(--danger); color: white; }
+        
+        .entities { display: flex; flex-direction: column; gap: 15px; }
+        
+        .entity {
+            background: var(--light);
+            padding: 18px;
+            border-radius: 12px;
+            border-left: 4px solid var(--primary);
+        }
+        
+        .entity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .entity-name { font-weight: 600; color: var(--dark); font-size: 1.1em; }
+        .entity-platform {
+            background: var(--primary);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            text-transform: uppercase;
+        }
+        
+        .entity-controls { display: flex; flex-direction: column; gap: 12px; }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .control-label {
+            min-width: 100px;
+            font-size: 0.95em;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .control-value {
+            min-width: 60px;
+            text-align: right;
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 1.05em;
+        }
+        
+        .toggle {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background: #ccc;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .toggle.active { background: var(--success); }
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .toggle.active::after { transform: translateX(30px); }
+        
+        .slider-container {
+            flex: 1;
+            position: relative;
+            height: 8px;
+            background: #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .slider-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 4px;
+            transition: width 0.2s;
+        }
+        .slider-thumb {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            border: 3px solid var(--primary);
+            top: -6px;
+            cursor: grab;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: box-shadow 0.2s;
+        }
+        .slider-thumb:active { cursor: grabbing; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        
+        .mode-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .mode-btn {
+            padding: 6px 14px;
+            border: 2px solid var(--primary);
+            background: white;
+            color: var(--primary);
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .mode-btn:hover { background: var(--light); }
+        .mode-btn.active { background: var(--primary); color: white; }
+        
+        .dps-info {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+            font-size: 0.85em;
+            color: #666;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.8em;
+            padding: 60px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .platform-light { border-left-color: #ffd700; }
+        .platform-switch { border-left-color: #2196f3; }
+        .platform-fan { border-left-color: #00bcd4; }
+        .platform-climate { border-left-color: #ff5722; }
+        .platform-sensor { border-left-color: #4caf50; }
+        .platform-alarm_control_panel { border-left-color: #f44336; }
+        .platform-vacuum { border-left-color: #9c27b0; }
+        .platform-lock { border-left-color: #795548; }
+        
+        @media (max-width: 768px) {
+            .devices-grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; gap: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <h1>🔌 Tuya2MQTT Bridge</h1>
+                <div class="subtitle">Enhanced s databází a auto-detekcí</div>
+                <div class="version">v2.0 | Home Assistant Compatible</div>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-success" onclick="scanDevices()">🔍 Skenovat zařízení</button>
+                <button class="btn btn-primary" onclick="refreshAll()">🔄 Obnovit</button>
+            </div>
+        </div>
+        
+        <div class="stats-grid" id="stats"></div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('devices')">📱 Zařízení</button>
+            <button class="tab" onclick="showTab('entities')">⚙️ Entity</button>
+            <button class="tab" onclick="showTab('database')">💾 Databáze</button>
+        </div>
+        
+        <div id="devices-tab" class="tab-content active">
+            <div class="devices-grid" id="devices">
+                <div class="loading">⏳ Načítám zařízení...</div>
+            </div>
+        </div>
+        
+        <div id="entities-tab" class="tab-content">
+            <div class="devices-grid" id="entities-list"></div>
+        </div>
+        
+        <div id="database-tab" class="tab-content">
+            <div id="database-stats"></div>
+        </div>
+    </div>
+    
+    <script>
+        let devicesData = {};
+        
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tab + '-tab').classList.add('active');
+            
+            if (tab === 'entities') loadEntitiesList();
+            if (tab === 'database') loadDatabaseStats();
+        }
+        
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const stats = await res.json();
+                
+                let html = `
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.uptime}</div>
+                        <div class="stat-label">⏱️ Uptime</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.devices_online}/${stats.devices_total}</div>
+                        <div class="stat-label">📱 Online zařízení</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.entities_total}</div>
+                        <div class="stat-label">⚙️ Entity</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.mqtt_sent + stats.mqtt_received}</div>
+                        <div class="stat-label">📨 MQTT zprávy</div>
+                    </div>
+                `;
+                
+                if (stats.history_records !== undefined) {
+                    html += `
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.history_records}</div>
+                            <div class="stat-label">💾 DB záznamy</div>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('stats').innerHTML = html;
+            } catch (e) {
+                console.error('Chyba:', e);
+            }
+        }
+        
+        async function loadDevices() {
+            try {
+                const res = await fetch('/api/devices');
+                const devices = await res.json();
+                devicesData = {};
+                devices.forEach(d => devicesData[d.device_id] = d);
+                
+                const container = document.getElementById('devices');
+                container.innerHTML = devices.map(createDeviceCard).join('');
+                attachEventListeners();
+            } catch (e) {
+                console.error('Chyba:', e);
+                document.getElementById('devices').innerHTML = '<div class="loading">❌ Chyba při načítání</div>';
+            }
+        }
+        
+        function createDeviceCard(device) {
+            const statusClass = device.available ? 'status-online' : 'status-offline';
+            const statusText = device.available ? 'Online' : 'Offline';
+            const entitiesHtml = device.entities.map(e => createEntityControl(device, e)).join('');
+            
+            return `
+                <div class="device-card">
+                    <div class="device-header">
+                        <div class="device-name">${device.name}</div>
+                        <div class="device-status ${statusClass}">${statusText}</div>
+                    </div>
+                    <div class="entities">${entitiesHtml}</div>
+                </div>
+            `;
+        }
+        
+        function createEntityControl(device, entity) {
+            const platform = entity.platform;
+            let controls = '';
+            
+            if (['light', 'switch', 'fan', 'lock'].includes(platform)) {
+                const isOn = entity.state.switch || entity.state.lock || false;
+                controls += `
+                    <div class="control-row">
+                        <span class="control-label">Stav:</span>
+                        <div class="toggle ${isOn ? 'active' : ''}" 
+                             data-entity="${entity.entity_id}" 
+                             data-control="switch"></div>
+                    </div>
+                `;
+                
+                if (platform === 'light' && entity.state.brightness !== undefined) {
+                    const brightness = Math.round((entity.state.brightness / 1000) * 100);
+                    controls += createSlider(entity.entity_id, 'brightness', brightness, 'Jas');
+                } else if (platform === 'fan' && entity.state.speed !== undefined) {
+                    controls += createSlider(entity.entity_id, 'brightness', entity.state.speed * 33, 'Rychlost');
+                }
+            } else if (platform === 'climate') {
+                const temp = entity.state.target_temp || 20;
+                controls += `
+                    <div class="control-row">
+                        <span class="control-label">Teplota:</span>
+                        <div class="control-value">${temp}°C</div>
+                    </div>
+                `;
+            } else if (platform === 'sensor') {
+                const value = entity.state.value || 0;
+                const unit = entity.unit_of_measurement || '';
+                controls += `
+                    <div class="control-row">
+                        <span class="control-label">Hodnota:</span>
+                        <div class="control-value">${value} ${unit}</div>
+                    </div>
+                `;
+            }
+            
+            const dps = Object.entries(entity.state).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
+            
+            return `
+                <div class="entity platform-${platform}">
+                    <div class="entity-header">
+                        <div class="entity-name">${entity.friendly_name}</div>
+                        <div class="entity-platform">${platform}</div>
+                    </div>
+                    <div class="entity-controls">${controls}</div>
+                    <div class="dps-info">DPS: ${dps}</div>
+                </div>
+            `;
+        }
+        
+        function createSlider(entityId, control, value, label) {
+            return `
+                <div class="control-row">
+                    <span class="control-label">${label}:</span>
+                    <div class="slider-container" data-entity="${entityId}" data-control="${control}">
+                        <div class="slider-fill" style="width: ${value}%"></div>
+                        <div class="slider-thumb" style="left: calc(${value}% - 10px)"></div>
+                    </div>
+                    <div class="control-value">${Math.round(value)}%</div>
+                </div>
+            `;
+        }
+        
+        function attachEventListeners() {
+            document.querySelectorAll('.toggle').forEach(toggle => {
+                toggle.onclick = async function() {
+                    const entityId = this.dataset.entity;
+                    const isActive = this.classList.contains('active');
+                    await controlEntity(entityId, { state: !isActive });
+                };
+            });
+            
+            document.querySelectorAll('.slider-container').forEach(slider => {
+                const thumb = slider.querySelector('.slider-thumb');
+                let isDragging = false;
+                
+                function updateSlider(e) {
+                    const rect = slider.getBoundingClientRect();
+                    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                    const percent = Math.round((x / rect.width) * 100);
+                    
+                    slider.querySelector('.slider-fill').style.width = percent + '%';
+                    thumb.style.left = `calc(${percent}% - 10px)`;
+                    slider.nextElementSibling.textContent = percent + '%';
+                    return percent;
+                }
+                
+                thumb.onmousedown = () => isDragging = true;
+                document.onmousemove = (e) => { if (isDragging) updateSlider(e); };
+                document.onmouseup = async (e) => {
+                    if (isDragging) {
+                        const percent = updateSlider(e);
+                        const entityId = slider.dataset.entity;
+                        const control = slider.dataset.control;
+                        await controlEntity(entityId, { [control]: percent });
+                        isDragging = false;
+                    }
+                };
+                
+                slider.onclick = async (e) => {
+                    if (e.target !== thumb) {
+                        const percent = updateSlider(e);
+                        await controlEntity(entityId, { [slider.dataset.control]: percent });
+                    }
+                };
+            });
+        }
+        
+        async function controlEntity(entityId, data) {
+            const parts = entityId.split('_');
+            const deviceId = parts[0];
+            const entityName = parts.slice(1).join('_');
+            
+            try {
+                const res = await fetch(`/api/device/${deviceId}/entity/${entityName}/set`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (res.ok) setTimeout(loadDevices, 500);
+            } catch (e) {
+                console.error('Chyba:', e);
+            }
+        }
+        
+        async function loadEntitiesList() {
+            const entities = document.getElementById('entities-list');
+            entities.innerHTML = '<div class="loading">Načítám entity...</div>';
+            // Implementace zobrazení všech entit
+        }
+        
+        async function loadDatabaseStats() {
+            const dbStats = document.getElementById('database-stats');
+            dbStats.innerHTML = '<div class="loading">Načítám statistiky databáze...</div>';
+            // Implementace zobrazení DB statistik
+        }
+        
+        async function scanDevices() {
+            if (!confirm('Spustit sken sítě pro Tuya zařízení?')) return;
+            
+            try {
+                const res = await fetch('/api/discovery/scan', { method: 'POST' });
+                const data = await res.json();
+                alert(`Nalezeno ${data.discovered} zařízení!`);
+                loadDevices();
+            } catch (e) {
+                alert('Chyba při skenování: ' + e.message);
+            }
+        }
+        
+        function refreshAll() {
+            loadStats();
+            loadDevices();
+        }
+        
+        // Inicializace
+        loadStats();
+        loadDevices();
+        setInterval(refreshAll, 5000);
+    </script>
+</body>
+</html>
