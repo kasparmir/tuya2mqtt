@@ -1,9 +1,7 @@
 """Automatic Tuya device discovery"""
 
 import logging
-import socket
-import json
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
 import tinytuya
 
 logger = logging.getLogger(__name__)
@@ -21,19 +19,14 @@ class DeviceDiscovery:
         """Scan network for Tuya devices"""
         logger.info("Starting Tuya device discovery...")
         
-        discovery_config = self.config_manager.config.get('discovery', {})
-        
         try:
-            # Use tinytuya scanner
             logger.info("Scanning network for Tuya devices (this may take 20-30 seconds)...")
             devices = tinytuya.deviceScan(False, 20)
             
-            # Parse devices - tinytuya returns dict with device IDs as keys
             device_list = []
             
             if isinstance(devices, dict):
                 for device_id, device_info in devices.items():
-                    # device_info can be a dict or string
                     if isinstance(device_info, dict):
                         device_data = {
                             'id': device_id,
@@ -44,7 +37,6 @@ class DeviceDiscovery:
                             'encrypted': device_info.get('encrypted', False)
                         }
                     else:
-                        # If device_info is a string (IP address)
                         device_data = {
                             'id': device_id,
                             'gwId': device_id,
@@ -59,11 +51,6 @@ class DeviceDiscovery:
             if device_list:
                 logger.info(f"Found {len(device_list)} Tuya devices on network")
                 self.discovered_devices = device_list
-                
-                # Save discovered devices if enabled
-                if discovery_config.get('save_discovered', True):
-                    self._save_discovered_devices(device_list)
-                
                 return device_list
             else:
                 logger.warning("No Tuya devices found on network")
@@ -72,13 +59,6 @@ class DeviceDiscovery:
         except Exception as e:
             logger.error(f"Error during device discovery: {e}", exc_info=True)
             return []
-    
-    def _save_discovered_devices(self, devices: List[Dict[str, Any]]):
-        """Save discovered devices info (but don't add to config automatically)"""
-        # Don't automatically add to config anymore
-        # Just keep them in memory for web UI display
-        logger.info(f"Discovery complete. Found {len(devices)} devices.")
-        logger.info("View them in web UI under 'Discovered Devices' section")
     
     def get_unconfigured_devices(self) -> List[Dict[str, Any]]:
         """Get devices that are discovered but not configured"""
@@ -98,13 +78,6 @@ class DeviceDiscovery:
         
         return unconfigured
     
-    def get_device_info(self, device_id: str) -> Dict[str, Any]:
-        """Get detailed info about a specific device"""
-        for device in self.discovered_devices:
-            if device.get('gwId') == device_id or device.get('id') == device_id:
-                return device
-        return {}
-    
     def get_discovered_summary(self) -> List[Dict[str, str]]:
         """Get summary of discovered devices for web UI"""
         summary = []
@@ -118,8 +91,9 @@ class DeviceDiscovery:
                 'id': device_id,
                 'ip': device.get('ip', 'Unknown'),
                 'version': device.get('version', '3.3'),
+                'product_id': device.get('product_id', ''),
                 'configured': is_configured,
-                'status': 'Ready' if is_configured else 'Needs local_key'
+                'status': 'Configured' if is_configured else 'Not configured'
             })
         
         return summary

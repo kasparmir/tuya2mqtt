@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Dict, Any
 import paho.mqtt.client as mqtt
 
@@ -19,6 +20,18 @@ class MQTTHandler:
             'messages_sent': 0,
             'messages_received': 0
         }
+    
+    @staticmethod
+    def sanitize_topic(text: str) -> str:
+        """
+        Sanitize text for use in MQTT topics.
+        Home Assistant requires topics to only contain: a-z A-Z 0-9 _ -
+        """
+        text = text.replace(' ', '_')
+        text = re.sub(r'[^a-zA-Z0-9_-]', '', text)
+        text = re.sub(r'_+', '_', text)
+        text = text.strip('_')
+        return text
     
     def connect(self):
         """Connect to MQTT broker"""
@@ -68,6 +81,14 @@ class MQTTHandler:
             
             # Publish online status
             client.publish(f"{base_topic}/bridge/state", "online", retain=True)
+            
+            # Publish bridge info
+            bridge_info = {
+                'state': 'online',
+                'version': '2.0',
+                'name': 'Tuya2MQTT Bridge'
+            }
+            client.publish(f"{base_topic}/bridge/info", json.dumps(bridge_info), retain=True)
     
     def _on_disconnect(self, client, userdata, rc):
         """MQTT disconnect callback"""
@@ -268,7 +289,9 @@ class MQTTHandler:
         
         # Publish entity states
         for entity in device.entities:
-            entity_topic = f"{base_topic}/{device.device_id}/{entity.name}"
+            # Use sanitized entity_id for topic (device_id + entity_name)
+            sanitized_entity_id = self.sanitize_topic(entity.entity_id)
+            entity_topic = f"{base_topic}/{device.device_id}/{sanitized_entity_id}"
             
             # Platform-specific state publishing
             if entity.platform in ['light', 'switch', 'fan', 'lock']:

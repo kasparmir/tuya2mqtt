@@ -46,27 +46,14 @@ class Entity:
         self.modes = entity_config.get('modes', [])
         self.fan_modes = entity_config.get('fan_modes', [])
         
-        # Alarm attributes
+        # Other attributes
         self.states = entity_config.get('states', {})
-        
-        # Vacuum attributes
-        self.vacuum_modes = entity_config.get('modes', [])
-        
-        # Cover attributes
         self.position_range = entity_config.get('position_range', [0, 100])
-        
-        # Number attributes
         self.min_value = entity_config.get('min', 0)
         self.max_value = entity_config.get('max', 100)
         self.step = entity_config.get('step', 1)
-        
-        # Select attributes
         self.options = entity_config.get('options', [])
-        
-        # Camera attributes
         self.stream_url = entity_config.get('stream_url')
-        
-        # Humidifier attributes
         self.humidity_range = entity_config.get('humidity_range', [30, 80])
         
         self.state = {}
@@ -88,7 +75,6 @@ class Entity:
             if dps_num in dps_values:
                 value = dps_values[dps_num]
                 
-                # Apply scaling if needed
                 if self.scale != 1.0 and isinstance(value, (int, float)):
                     value = value * self.scale
                 
@@ -140,7 +126,6 @@ class TuyaDevice:
         self.version = config.get('version', '3.3')
         self.database = database
         
-        # Initialize Tuya device connection
         self.device = tinytuya.Device(
             dev_id=device_id,
             address=self.ip,
@@ -149,7 +134,6 @@ class TuyaDevice:
         )
         self.device.set_socketPersistent(True)
         
-        # Create entities from config
         self.entities = []
         for entity_config in config.get('entities', []):
             entity = Entity(device_id, entity_config)
@@ -159,7 +143,6 @@ class TuyaDevice:
         self.last_update = None
         self.available = True
         
-        # Save to database if available
         if self.database:
             self.database.save_device(device_id, self.name, self.ip, self.version, config)
     
@@ -172,11 +155,9 @@ class TuyaDevice:
                 self.last_update = datetime.now()
                 self.available = True
                 
-                # Update all entities
                 for entity in self.entities:
                     entity.update_state(self.last_state)
                     
-                    # Save entity state to database
                     if self.database:
                         self.database.save_entity_state(
                             entity.entity_id,
@@ -186,7 +167,6 @@ class TuyaDevice:
                             entity.state
                         )
                 
-                # Log event
                 if self.database:
                     self.database.log_event(
                         self.device_id,
@@ -245,6 +225,24 @@ class TuyaDevice:
                 return entity
         return None
     
+    def _get_unmapped_dps(self) -> Dict[int, Any]:
+        """Get DPS values that are not mapped to any entity"""
+        if not self.last_state:
+            return {}
+        
+        mapped_dps = set()
+        for entity in self.entities:
+            for dps_num in entity.dps_map.values():
+                if dps_num is not None:
+                    mapped_dps.add(dps_num)
+        
+        unmapped = {}
+        for dps_num, value in self.last_state.items():
+            if dps_num not in mapped_dps:
+                unmapped[dps_num] = value
+        
+        return unmapped
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert device to dictionary"""
         return {
@@ -254,7 +252,8 @@ class TuyaDevice:
             'available': self.available,
             'last_update': self.last_update.isoformat() if self.last_update else None,
             'entities': [e.to_dict() for e in self.entities],
-            'raw_state': self.last_state
+            'raw_state': self.last_state,
+            'unmapped_dps': self._get_unmapped_dps()
         }
 
 
@@ -318,5 +317,3 @@ class DeviceManager:
                 except Exception as e:
                     logger.error(f"Error polling device {device.device_id}: {e}")
             time.sleep(interval)
-
-

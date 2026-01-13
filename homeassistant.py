@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,22 @@ class HomeAssistantDiscovery:
     def __init__(self, config_manager, mqtt_handler):
         self.config_manager = config_manager
         self.mqtt_handler = mqtt_handler
+    
+    @staticmethod
+    def sanitize_topic(text: str) -> str:
+        """
+        Sanitize text for use in MQTT topics.
+        Home Assistant requires topics to only contain: a-z A-Z 0-9 _ -
+        """
+        # Replace spaces with underscores
+        text = text.replace(' ', '_')
+        # Remove any characters that aren't alphanumeric, underscore, or hyphen
+        text = re.sub(r'[^a-zA-Z0-9_-]', '', text)
+        # Remove consecutive underscores
+        text = re.sub(r'_+', '_', text)
+        # Remove leading/trailing underscores
+        text = text.strip('_')
+        return text
     
     def publish_all_discoveries(self):
         """Publish discovery for all entities"""
@@ -29,13 +46,21 @@ class HomeAssistantDiscovery:
     def _publish_entity_discovery(self, device, entity, discovery_prefix):
         """Publish discovery for a single entity"""
         base_topic = self.config_manager.config['mqtt']['base_topic']
-        discovery_topic = f"{discovery_prefix}/{entity.platform}/{entity.entity_id}/config"
-        entity_topic = f"{base_topic}/{device.device_id}/{entity.name}"
         
-        # Base payload
-        payload = {
+        # Sanitize entity_id for MQTT topic - remove spaces and special characters
+        sanitized_entity_id = self.sanitize_topic(entity.entity_id)
+        sanitized_name = self.sanitize_topic(entity.name)
+        
+        # Create discovery topic with sanitized entity_id
+        discovery_topic = f"{discovery_prefix}/{entity.platform}/{sanitized_entity_id}/config"
+        
+        # Use only device_id in topic (no entity name)
+        entity_topic = f"{base_topic}/{device.device_id}/{sanitized_entity_id}"
+        
+        # Base discovery payload
+        discovery_payload = {
             'name': entity.friendly_name,
-            'unique_id': entity.entity_id,
+            'unique_id': sanitized_entity_id,
             'availability_topic': f"{base_topic}/{device.device_id}/availability",
             'icon': entity.icon,
             'device': {
@@ -49,19 +74,24 @@ class HomeAssistantDiscovery:
         
         # Platform-specific configuration
         if entity.platform == 'light':
-            payload.update({
+            color_modes = self._get_light_color_modes(entity)
+            
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/set",
-                'schema': 'json',
-                'brightness': entity.get_dps('brightness') is not None,
-                'color_temp': entity.get_dps('color_temp') is not None,
-                'supported_color_modes': self._get_light_color_modes(entity)
+                'schema': 'json'
             })
-            if entity.get_dps('brightness'):
-                payload['brightness_scale'] = 255
+            
+            # Only add supported_color_modes if there are valid modes
+            if color_modes and len(color_modes) > 0:
+                discovery_payload['supported_color_modes'] = color_modes
+                
+                # Add brightness_scale only if brightness is supported
+                if 'brightness' in color_modes:
+                    discovery_payload['brightness_scale'] = 255
         
         elif entity.platform == 'switch':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/set",
                 'payload_on': 'ON',
@@ -69,7 +99,7 @@ class HomeAssistantDiscovery:
             })
         
         elif entity.platform == 'fan':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/set",
                 'percentage_state_topic': f"{entity_topic}/speed",
@@ -79,25 +109,25 @@ class HomeAssistantDiscovery:
             })
         
         elif entity.platform == 'sensor':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
             })
             if entity.unit_of_measurement:
-                payload['unit_of_measurement'] = entity.unit_of_measurement
+                discovery_payload['unit_of_measurement'] = entity.unit_of_measurement
             if entity.device_class:
-                payload['device_class'] = entity.device_class
+                discovery_payload['device_class'] = entity.device_class
         
         elif entity.platform == 'binary_sensor':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'payload_on': True,
                 'payload_off': False
             })
             if entity.device_class:
-                payload['device_class'] = entity.device_class
+                discovery_payload['device_class'] = entity.device_class
         
         elif entity.platform == 'climate':
-            payload.update({
+            discovery_payload.update({
                 'mode_state_topic': f"{entity_topic}/state",
                 'mode_command_topic': f"{entity_topic}/set",
                 'temperature_state_topic': f"{entity_topic}/state",
@@ -110,12 +140,12 @@ class HomeAssistantDiscovery:
                 'temperature_unit': entity.temperature_unit
             })
             if entity.fan_modes:
-                payload['fan_modes'] = entity.fan_modes
-                payload['fan_mode_state_topic'] = f"{entity_topic}/state"
-                payload['fan_mode_command_topic'] = f"{entity_topic}/set"
+                discovery_payload['fan_modes'] = entity.fan_modes
+                discovery_payload['fan_mode_state_topic'] = f"{entity_topic}/state"
+                discovery_payload['fan_mode_command_topic'] = f"{entity_topic}/set"
         
         elif entity.platform == 'cover':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/command",
                 'position_topic': f"{entity_topic}/position",
@@ -126,7 +156,7 @@ class HomeAssistantDiscovery:
             })
         
         elif entity.platform == 'lock':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/command",
                 'payload_lock': 'LOCK',
@@ -136,28 +166,28 @@ class HomeAssistantDiscovery:
             })
         
         elif entity.platform == 'alarm_control_panel':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/command",
                 'code_arm_required': False
             })
         
         elif entity.platform == 'vacuum':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/command",
                 'supported_features': ['start', 'stop', 'pause', 'return_home']
             })
         
         elif entity.platform == 'camera':
-            payload.update({
+            discovery_payload.update({
                 'topic': f"{entity_topic}/image"
             })
             if entity.stream_url:
-                payload['stream_source'] = entity.stream_url
+                discovery_payload['stream_source'] = entity.stream_url
         
         elif entity.platform == 'humidifier':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/set",
                 'target_humidity_state_topic': f"{entity_topic}/target_humidity",
@@ -167,10 +197,10 @@ class HomeAssistantDiscovery:
                 'max_humidity': entity.humidity_range[1]
             })
             if entity.modes:
-                payload['modes'] = entity.modes
+                discovery_payload['modes'] = entity.modes
         
         elif entity.platform == 'number':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/set",
                 'min': entity.min_value,
@@ -178,17 +208,17 @@ class HomeAssistantDiscovery:
                 'step': entity.step
             })
             if entity.unit_of_measurement:
-                payload['unit_of_measurement'] = entity.unit_of_measurement
+                discovery_payload['unit_of_measurement'] = entity.unit_of_measurement
         
         elif entity.platform == 'select':
-            payload.update({
+            discovery_payload.update({
                 'state_topic': f"{entity_topic}/state",
                 'command_topic': f"{entity_topic}/set",
                 'options': entity.options
             })
         
         elif entity.platform == 'button':
-            payload.update({
+            discovery_payload.update({
                 'command_topic': f"{entity_topic}/command",
                 'payload_press': 'PRESS'
             })
@@ -196,17 +226,40 @@ class HomeAssistantDiscovery:
         # Publish discovery
         self.mqtt_handler.client.publish(
             discovery_topic,
-            json.dumps(payload),
+            json.dumps(discovery_payload),
             retain=True
         )
+        
+        logger.debug(f"Published HA discovery: {discovery_topic}")
     
     def _get_light_color_modes(self, entity):
-        """Get supported color modes for light"""
-        modes = []
-        if entity.get_dps('brightness'):
-            modes.append('brightness')
-        if entity.get_dps('color_temp'):
-            modes.append('color_temp')
-        if entity.get_dps('color'):
-            modes.append('hs')
-        return modes if modes else ['onoff']
+        """Get supported color modes for light - only valid combinations"""
+        has_brightness = entity.get_dps('brightness') is not None
+        has_color_temp = entity.get_dps('color_temp') is not None
+        has_color = entity.get_dps('color') is not None
+        
+        # Home Assistant valid color mode combinations:
+        # - onoff (just on/off)
+        # - brightness (brightness only)
+        # - color_temp (color temp + brightness)
+        # - hs (hue/sat + brightness)
+        # - rgb (rgb + brightness)
+        # - rgbw (rgbw + brightness)
+        # - rgbww (rgbww + brightness)
+        # - white (white only + brightness)
+        
+        # IMPORTANT: Cannot combine 'brightness' with 'hs' or 'color_temp'
+        # as those modes already include brightness control
+        
+        if has_color:
+            # Color mode includes brightness automatically
+            return ['hs']
+        elif has_color_temp:
+            # Color temp mode includes brightness automatically
+            return ['color_temp']
+        elif has_brightness:
+            # Just brightness control
+            return ['brightness']
+        else:
+            # Just on/off
+            return ['onoff']

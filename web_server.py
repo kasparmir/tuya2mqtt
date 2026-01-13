@@ -1,3 +1,6 @@
+# ============================================================================
+# FILE: web_server.py
+# ============================================================================
 """Enhanced Flask web server with improved UI"""
 
 import json
@@ -440,24 +443,6 @@ class WebServer:
             transition: box-shadow 0.2s;
         }
         .slider-thumb:active { cursor: grabbing; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-        
-        .mode-selector {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .mode-btn {
-            padding: 6px 14px;
-            border: 2px solid var(--primary);
-            background: white;
-            color: var(--primary);
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.85em;
-            transition: all 0.2s;
-        }
-        .mode-btn:hover { background: var(--light); }
-        .mode-btn.active { background: var(--primary); color: white; }
         
         .dps-info {
             margin-top: 12px;
